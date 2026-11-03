@@ -5,9 +5,12 @@ export const isOpen = (t: Trade) => t.exitPrice === undefined;
 export const isClosed = (t: Trade) => !isOpen(t);
 export const grossPnl = (t: Trade): number | null => t.exitPrice === undefined ? null : (t.exitPrice - t.entryPrice) * t.quantity * t.multiplier * (t.direction === 'long' ? 1 : -1);
 export const netPnl = (t: Trade): number | null => { const p = grossPnl(t); return p === null ? null : p - t.fees; };
+
+/** Returns null when no valid, protective stop exists; never presents a wrong-side stop as zero risk. */
 export function priceRisk(t: Trade): number | null {
   if (t.stopLoss === undefined) return null;
-  return Math.max(0, (t.entryPrice - t.stopLoss) * (t.direction === 'long' ? 1 : -1)) * t.quantity * t.multiplier;
+  const distance = (t.entryPrice - t.stopLoss) * (t.direction === 'long' ? 1 : -1);
+  return distance > 0 ? distance * t.quantity * t.multiplier : null;
 }
 export const openRisk = (t: Trade) => { const r = priceRisk(t); return r === null ? null : r + t.fees; };
 export function rMultiple(t: Trade): number | null {
@@ -59,7 +62,9 @@ export function statistics(trades: Trade[], account: Account) {
     best: profits.length ? profits.reduce((a, b) => Math.max(a, b)) : null, worst: profits.length ? profits.reduce((a, b) => Math.min(a, b)) : null,
     balance: account.initialBalance + net, returnPercent: account.initialBalance > 0 ? net / account.initialBalance * 100 : null,
     drawdown: maxDrawdown(equityCurve(closed, account)),
-    openRisk: open.reduce((a, t) => a + (openRisk(t) ?? 0), 0), noStopCount: open.filter(t => t.stopLoss === undefined).length,
+    openRisk: open.reduce((a, t) => a + (openRisk(t) ?? 0), 0),
+    // Includes missing and invalid-side stops: neither has a defensible risk estimate.
+    noStopCount: open.filter(t => priceRisk(t) === null).length,
     avgR: rValues.length ? rValues.reduce((a, b) => a + b, 0) / rValues.length : null, rCount: rValues.length,
     discipline: withChecklist.length ? followed / withChecklist.length * 100 : null, checklistCount: withChecklist.length,
     streak, streakType,

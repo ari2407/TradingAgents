@@ -42,6 +42,12 @@ export const tradeSchema = z.object({
   if (t.closedAt && Date.parse(t.closedAt) < Date.parse(t.openedAt)) {
     ctx.addIssue({ code: 'custom', path: ['closedAt'], message: 'Tanggal keluar tidak boleh sebelum tanggal masuk.' });
   }
+  if (t.stopLoss !== undefined && (t.direction === 'long' ? t.stopLoss >= t.entryPrice : t.stopLoss <= t.entryPrice)) {
+    ctx.addIssue({ code: 'custom', path: ['stopLoss'], message: `Stop loss untuk ${t.direction} harus berada di sisi yang benar dari harga masuk.` });
+  }
+  if (t.takeProfit !== undefined && (t.direction === 'long' ? t.takeProfit <= t.entryPrice : t.takeProfit >= t.entryPrice)) {
+    ctx.addIssue({ code: 'custom', path: ['takeProfit'], message: `Target untuk ${t.direction} harus berada di sisi yang benar dari harga masuk.` });
+  }
   if (new Set(t.attachmentIds).size !== t.attachmentIds.length) {
     ctx.addIssue({ code: 'custom', path: ['attachmentIds'], message: 'Lampiran tidak boleh duplikat.' });
   }
