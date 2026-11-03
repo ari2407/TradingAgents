@@ -6,16 +6,19 @@ export const isClosed = (t: Trade) => !isOpen(t);
 export const grossPnl = (t: Trade): number | null => t.exitPrice === undefined ? null : (t.exitPrice - t.entryPrice) * t.quantity * t.multiplier * (t.direction === 'long' ? 1 : -1);
 export const netPnl = (t: Trade): number | null => { const p = grossPnl(t); return p === null ? null : p - t.fees; };
 
-/** Returns null when no valid, protective stop exists; never presents a wrong-side stop as zero risk. */
+// A zero result means no price distance only for legacy callers. Risk displays must use
+// openRisk(), which returns null unless the stop is protective and therefore estimable.
 export function priceRisk(t: Trade): number | null {
   if (t.stopLoss === undefined) return null;
-  const distance = (t.entryPrice - t.stopLoss) * (t.direction === 'long' ? 1 : -1);
-  return distance > 0 ? distance * t.quantity * t.multiplier : null;
+  return Math.max(0, (t.entryPrice - t.stopLoss) * (t.direction === 'long' ? 1 : -1)) * t.quantity * t.multiplier;
 }
-export const openRisk = (t: Trade) => { const r = priceRisk(t); return r === null ? null : r + t.fees; };
+export function hasProtectiveStop(t: Trade): boolean {
+  return t.stopLoss !== undefined && (t.direction === 'long' ? t.stopLoss < t.entryPrice : t.stopLoss > t.entryPrice);
+}
+export const openRisk = (t: Trade) => { if (!hasProtectiveStop(t)) return null; const r = priceRisk(t); return r === null ? null : r + t.fees; };
 export function rMultiple(t: Trade): number | null {
   const p = netPnl(t); const risk = priceRisk(t);
-  return p === null || risk === null || risk <= 0 ? null : p / risk;
+  return p === null || risk === null || risk <= 0 || !hasProtectiveStop(t) ? null : p / risk;
 }
 export function rewardRisk(entry: number, stop: number, target: number, direction: Direction = 'long'): number | null {
   const sign = direction === 'long' ? 1 : -1;
@@ -36,6 +39,13 @@ export function maxDrawdown(points: EquityPoint[]) {
   let peak = points[0]?.equity ?? 0, amount = 0, percent = 0;
   for (const p of points) { peak = Math.max(peak, p.equity); const dd = Math.max(0, peak - p.equity); amount = Math.max(amount, dd); if (peak > 0) percent = Math.max(percent, dd / peak * 100); }
   return { amount, percent };
+}
+/** Equity at the start of a reporting period, based only on previously closed trades. */
+export function periodOpeningBalance(trades: Trade[], account: Account, start?: string): number {
+  if (!start) return account.initialBalance;
+  return account.initialBalance + trades
+    .filter(t => t.accountId === account.id && t.closedAt && t.closedAt < start)
+    .reduce((sum, t) => sum + (netPnl(t) ?? 0), 0);
 }
 export function statistics(trades: Trade[], account: Account) {
   const closed = trades.filter(t => t.accountId === account.id && isClosed(t));
@@ -63,8 +73,7 @@ export function statistics(trades: Trade[], account: Account) {
     balance: account.initialBalance + net, returnPercent: account.initialBalance > 0 ? net / account.initialBalance * 100 : null,
     drawdown: maxDrawdown(equityCurve(closed, account)),
     openRisk: open.reduce((a, t) => a + (openRisk(t) ?? 0), 0),
-    // Includes missing and invalid-side stops: neither has a defensible risk estimate.
-    noStopCount: open.filter(t => priceRisk(t) === null).length,
+    noStopCount: open.filter(t => !hasProtectiveStop(t)).length,
     avgR: rValues.length ? rValues.reduce((a, b) => a + b, 0) / rValues.length : null, rCount: rValues.length,
     discipline: withChecklist.length ? followed / withChecklist.length * 100 : null, checklistCount: withChecklist.length,
     streak, streakType,

@@ -3,7 +3,7 @@ import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, Brain, CheckCheck, C
 import { useApp } from '../stores/AppContext';
 import { Badge, Card, EmptyState, Money, PageHeader, StatCard } from '../components/ui';
 import { BreakdownBars, EquityChart, WinLossDonut } from '../components/Charts';
-import { equityCurve, groupPerformance, inPeriod, netPnl, statistics, tradingSession } from '../lib/calculations';
+import { equityCurve, groupPerformance, inPeriod, netPnl, periodOpeningBalance, statistics, tradingSession } from '../lib/calculations';
 import { emotionLabel } from '../lib/types';
 import { number, percent, periodStart } from '../lib/format';
 
@@ -11,7 +11,7 @@ export function AnalyticsPage() {
   const { data } = useApp(); const { account, trades, strategies, settings } = data!;
   const [period, setPeriod] = useState('all'), [breakdown, setBreakdown] = useState('strategy');
   const all = trades.filter(t => t.accountId === account.id), start = periodStart(period), filtered = inPeriod(all, start);
-  const baseline = account.initialBalance + (start ? all.filter(t => t.closedAt && t.closedAt < start).reduce((sum, t) => sum + netPnl(t)!, 0) : 0);
+  const baseline = periodOpeningBalance(all, account, start);
   const periodAccount = { ...account, initialBalance: baseline, createdAt: start ?? account.createdAt };
   const stats = statistics(filtered, periodAccount), currency = account.currency, hidden = settings.hideBalances;
   const groups = groupPerformance(filtered, t => breakdown === 'strategy' ? strategies.find(s => s.id === t.strategyId)?.name || 'Tanpa strategi' : breakdown === 'symbol' ? t.symbol : breakdown === 'session' ? tradingSession(t.openedAt) : breakdown === 'direction' ? t.direction === 'long' ? 'Long / Beli' : 'Short / Jual' : emotionLabel(t.emotion));
@@ -32,7 +32,7 @@ export function AnalyticsPage() {
       { icon: ArrowDownRight, label: 'Trade terburuk', value: <Money value={stats.worst} currency={currency} sign colored />, hint: 'Hasil bersih satu trade' },
       { icon: CheckCheck, label: 'Checklist terpenuhi semua', value: percent(stats.discipline, 0), hint: `${stats.checklistCount} trade closed memiliki checklist` },
       { icon: Clock3, label: 'Posisi masih terbuka', value: String(stats.open.length), hint: 'Berdasarkan tanggal masuk pada periode' },
-      { icon: ShieldCheck, label: 'Risiko terbuka + biaya', value: <Money value={stats.openRisk} currency={currency} />, hint: `${stats.noStopCount} posisi tanpa SL tidak termasuk angka` },
+      { icon: ShieldCheck, label: 'Risiko terbuka + biaya', value: <Money value={stats.openRisk} currency={currency} />, hint: `${stats.noStopCount} posisi tanpa SL valid tidak termasuk estimasi risiko` },
     ].map(({ icon: Icon, label, value, hint }) => <div key={label}><Icon size={18} /><span><strong>{label}</strong><small>{hint}</small></span><b>{value}</b></div>)}</div></Card></div>
     <Card title="Temukan pola Anda" subtitle="Perbandingan menggunakan trade closed pada periode yang dipilih" className="breakdown-card"><div className="tabs breakdown-tabs">{[['strategy', 'Strategi', Target], ['symbol', 'Instrumen', BarChart3], ['session', 'Sesi masuk', Clock3], ['direction', 'Arah posisi', TrendingUp], ['emotion', 'Emosi', Brain]].map(([key, label, Icon]) => { const TabIcon = Icon as typeof Target; return <button key={key as string} className={breakdown === key ? 'active' : ''} onClick={() => setBreakdown(key as string)}><TabIcon size={15} />{label as string}</button>; })}</div><div className="breakdown-content"><BreakdownBars data={groups} currency={currency} hidden={hidden} /><div className="breakdown-summary"><span className="eyebrow">CARA MEMBACA POLA</span><h3>Angka menunjukkan pola.<br />Catatan menjelaskan sebabnya.</h3><p>Jangan langsung menyimpulkan strategi terbaik dari satu atau dua trade. Bandingkan jumlah sampel, risiko, dan kondisi pasar.</p><p>Sesi entry mengikuti jam perangkat saat trade dicatat, bukan zona waktu bursa.</p><Crosshair size={35} strokeWidth={1.2} /></div></div></Card>
     </>}

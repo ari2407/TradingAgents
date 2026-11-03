@@ -4,7 +4,7 @@ import { Activity, ArrowRight, ArrowUpRight, BookOpen, CalendarCheck2, Check, Ch
 import { useApp } from '../stores/AppContext';
 import { Badge, Button, Card, EmptyState, Money, PageHeader, ProgressBar, StatCard, TextLink } from '../components/ui';
 import { BreakdownBars, EquityChart } from '../components/Charts';
-import { dailyResults, equityCurve, groupPerformance, inPeriod, isOpen, netPnl, statistics } from '../lib/calculations';
+import { dailyResults, equityCurve, groupPerformance, inPeriod, isOpen, netPnl, periodOpeningBalance, statistics } from '../lib/calculations';
 import { dateLabel, localDate, number, percent, periodStart } from '../lib/format';
 
 export function DashboardPage() {
@@ -13,10 +13,7 @@ export function DashboardPage() {
   const all = trades.filter(t => t.accountId === account.id);
   const start = periodStart(period);
   const filtered = inPeriod(all, start);
-  // Period return must use equity at the start of the selected period, not the account's original deposit.
-  const periodStartBalance = account.initialBalance + (start
-    ? all.filter(t => t.closedAt && t.closedAt < start).reduce((sum, t) => sum + (netPnl(t) ?? 0), 0)
-    : 0);
+  const periodStartBalance = periodOpeningBalance(all, account, start);
   const periodAccount = { ...account, initialBalance: periodStartBalance, createdAt: start ?? account.createdAt };
   const stats = statistics(filtered, periodAccount); const fullStats = statistics(all, account);
   const currency = account.currency, hidden = settings.hideBalances;
