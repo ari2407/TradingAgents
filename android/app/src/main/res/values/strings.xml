@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TradingAgents Journal</string>
+    <string name="title_activity_main">TradingAgents Journal</string>
+    <string name="package_name">com.ari2407.tradingagentsjournal</string>
+    <string name="custom_url_scheme">com.ari2407.tradingagentsjournal</string>
+</resources>
