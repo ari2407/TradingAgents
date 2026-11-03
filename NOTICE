@@ -1,0 +1,12 @@
+TradingAgents Journal
+Copyright 2026 TradingAgents Journal contributors
+
+This repository was originally based on TradingAgents, a multi-agent trading
+framework from TauricResearch. The journal application replaces the previous
+application code; the original code and license remain available in Git history.
+The Apache License 2.0 is retained in LICENSE.
+
+This project is not an official TauricResearch product and does not imply
+endorsement by the original authors. Third-party npm/Android dependencies retain
+their respective licenses. The development-only Android signing key is documented
+in android-signing/README.md and must not be used for production distribution.

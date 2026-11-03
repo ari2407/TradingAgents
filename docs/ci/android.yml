@@ -1,0 +1,105 @@
+name: Verify journal & build Android
+
+on:
+  push:
+    branches: [arena/e8ce8e38-tradingagents, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: journal-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, calculations, browser & offline tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: journal-test-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: journal-web-dist
+          path: dist/
+          include-hidden-files: true
+          retention-days: 7
+
+  android:
+    name: Build installable Android APK
+    needs: verify
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: journal-web-dist
+          path: dist/
+      - name: Bundle the tested web assets into Android
+        run: npx cap sync android
+      - name: Assemble and lint the development APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug lintDebug -PjournalVersionCode=${{ github.run_number }} -PjournalVersionName=1.0.0
+      - name: Verify APK signature and prepare download
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/TradingAgents-Journal-Android.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose release/TradingAgents-Journal-Android.apk
+          cd release
+          sha256sum TradingAgents-Journal-Android.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TradingAgents-Journal-Android
+          path: release/
+          retention-days: 30
+      - name: Publish a downloadable GitHub prerelease
+        if: github.ref == 'refs/heads/arena/e8ce8e38-tradingagents' || github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: journal-v1.0.0-build.${{ github.run_number }}
+        run: |
+          cp docs/RELEASE_NOTES.md release/notes.md
+          printf '\n---\nBuild: %s\nCommit: %s\nPaket: com.ari2407.tradingagentsjournal.debug\nAPK ditandatangani dengan kunci pengembangan yang dipublikasikan; bukan rilis Play Store.\n' "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" >> release/notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/TradingAgents-Journal-Android.apk release/SHA256SUMS.txt --clobber
+          else
+            gh release create "$TAG" release/TradingAgents-Journal-Android.apk release/SHA256SUMS.txt --target "$GITHUB_SHA" --title "TradingAgents Journal 1.0.0 · Android build $GITHUB_RUN_NUMBER" --notes-file release/notes.md --prerelease --latest
+          fi
